@@ -1,0 +1,4 @@
+build/
+cmake-build-*/
+sample.vtk
+cube.vtk
