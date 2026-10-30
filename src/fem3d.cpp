@@ -4,6 +4,7 @@
 #include <cmath>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <map>
 #include <stdexcept>
 #include <string>
@@ -37,8 +38,19 @@ Inverse3 inverse3(const Vec3& c1, const Vec3& c2, const Vec3& c3) {
 }
 
 void validate_csr(const CSRMatrix& a) {
-    if (a.row_offsets.size()!=a.rows+1 || a.column_indices.size()!=a.values.size() || a.row_offsets.back()!=a.values.size())
+    if (a.rows==std::numeric_limits<std::size_t>::max() ||
+        a.row_offsets.size()!=a.rows+1 ||
+        a.column_indices.size()!=a.values.size())
         throw std::invalid_argument("malformed CSR matrix");
+    if (a.row_offsets.front()!=0 || a.row_offsets.back()!=a.values.size())
+        throw std::invalid_argument("malformed CSR matrix");
+    for (std::size_t r=0;r<a.rows;++r) {
+        if (a.row_offsets[r]>a.row_offsets[r+1] || a.row_offsets[r+1]>a.values.size())
+            throw std::invalid_argument("malformed CSR matrix");
+    }
+    for (const auto column:a.column_indices) {
+        if (column>=a.rows) throw std::invalid_argument("malformed CSR matrix");
+    }
 }
 
 } // namespace
@@ -109,20 +121,27 @@ void apply_dirichlet(const CSRMatrix& a, const std::vector<double>& load,
         if (fixed[bc.first] && values[bc.first]!=bc.second) throw std::invalid_argument("conflicting Dirichlet values");
         fixed[bc.first]=true; values[bc.first]=bc.second;
     }
-    out.rows=a.rows; out.row_offsets.clear(); out.column_indices.clear(); out.values.clear();
-    out.row_offsets.push_back(0); rhs=load;
+    CSRMatrix constrained; constrained.rows=a.rows;
+    constrained.row_offsets.reserve(a.rows+1); constrained.row_offsets.push_back(0);
+    std::vector<double> constrained_rhs=load;
     for (std::size_t r=0;r<a.rows;++r) {
         if (fixed[r]) {
-            out.column_indices.push_back(r); out.values.push_back(1.0); rhs[r]=values[r];
+            constrained.column_indices.push_back(r); constrained.values.push_back(1.0);
+            constrained_rhs[r]=values[r];
         } else {
             for (std::size_t k=a.row_offsets[r];k<a.row_offsets[r+1];++k) {
                 const auto c=a.column_indices[k];
-                if (fixed[c]) rhs[r]-=a.values[k]*values[c];
-                else { out.column_indices.push_back(c); out.values.push_back(a.values[k]); }
+                if (fixed[c]) constrained_rhs[r]-=a.values[k]*values[c];
+                else {
+                    constrained.column_indices.push_back(c);
+                    constrained.values.push_back(a.values[k]);
+                }
             }
         }
-        out.row_offsets.push_back(out.values.size());
+        constrained.row_offsets.push_back(constrained.values.size());
     }
+    out=std::move(constrained);
+    rhs=std::move(constrained_rhs);
 }
 
 SolverResult solve_pcg(const CSRMatrix& a, const std::vector<double>& b, const SolverOptions& options) {
