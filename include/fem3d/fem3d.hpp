@@ -56,6 +56,7 @@ ElementData tet4_element(const std::array<Vec3, 4>& points, double conductivity 
 CSRMatrix assemble(const Mesh& mesh, double conductivity = 1.0);
 
 // Apply prescribed nodal temperatures while preserving symmetry (strong elimination).
+// The output matrix/load may alias the input matrix/load, respectively.
 void apply_dirichlet(const CSRMatrix& matrix,
                      const std::vector<double>& load,
                      const std::vector<std::pair<std::size_t, double>>& prescribed,
